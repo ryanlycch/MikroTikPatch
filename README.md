@@ -1,38 +1,48 @@
-# Patch MikroTik RouterOS [[中文](README_CN.md)]
+# MikroTik RouterOS Patch  [[English](README_EN.md)]
 
-### [[Discord](https://discord.gg/keV6MWQFtX)] [[Telegram](https://t.me/+99Mw06p3K7NlMmNl)]
 
-### Download [Latest Patched](https://github.com/elseif/MikroTikPatch/releases/latest) iso file,install it and enjoy.
-### CHR image is both support BIOS and UEFI boot mode.
+### 国内镜像下载 密码: elseif
+[ [123pan](https://www.123pan.com/s/IpxgTd-BYjQh.html) ]
+[ [7.15.2](https://elseif.lanzouj.com/b00crdq4hg)]
+[ [7.16beta4](https://elseif.lanzouj.com/b00crdq4fe) ] 
+[ [7.15.2-arm64](https://elseif.lanzouj.com/b00crdq4ih) ] 
+[ [7.16beta4-arm64](https://elseif.lanzouj.com/b00crdq4gf) ] 
+[ [6.49.15](https://elseif.lanzouj.com/b00crdq4ji) ] 
+[ [6.49.13](https://elseif.lanzouj.com/b00crdq4kj) ]       
 
-![](install.png)
-![](routeros.png)
 
-### Uses keygen to generate license key.
-![](keygen.png)
 
-## How generate license key (***keygen.exe run on windows***)
-    keygen.zip in iso or img root directory,for chr image it's in /flash/rw/disk/ directory,same as winbox file manager directory
-    run unzip keygen.zip
-    run keygen.exe
-    input your software id
-## How to use shell
-    install option-{version}.npk package
-    run telnet to routeros with username devel and password is same as admin
-## How to use python3
-    install python3-{version}.npk package
-    run telnet to routeros with username devel and password is same as admin
-    run python -V
+![](image/install.png)
+![](image/routeros.png)
+
+### x86模式授权许可
+![](image/x86.png)
+### x86模式在线授权(v6.x)
+![](image/renew_v6.png)
+### Chr模式在线授权
+![](image/renew.png)
+### Chr模式授权许可
+![](image/chr.png)
+
+## 如何使用Shell
+    安装 option-{version}.npk 包
+    telnet到RouterOS,用户名devel,密码与admin的密码相同
+## 如何授权许可
+    进入shell
+    运行 keygen
+    参考上图。
+    Chr镜像支持在线授权许可
+## 如何使用Python
+    安装 python3-{version}.npk 包
+    telnet到RouterOS,用户名devel,密码与admin的密码相同
+    运行 python -V
 ### npk.py
-    Sign，Verify，Create, Extract npk file.
+    对npk文件进行解包，修改，创建，签名和验证
 ### patch.py
-    Patch public key and sign NPK files
-### netinstall.py
-    Modify netinstallexe to enable network installation of NPK files that have been resigned in ISO
-### upgrade.py
-    By adding static domain name resolution in RouterOS, the NPK file that has been resigned in ISO can be installed during the upgrade process.
-## all patches are applied automatically with [Github Action](https://github.com/elseif/MikroTikPatch/blob/main/.github/workflows/mikrotik_patch.yml).
+    替换公钥并签名
 
+
+## 所有的修补操作都自动运行在[Github Action](https://github.com/elseif/MikroTikPatch/blob/main/.github/workflows/)。
 
 
 
