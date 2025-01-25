@@ -53,6 +53,7 @@ def patch_block(dev:str,file:str,key_dict):
     stdout,_ = run_shell_command(f"debugfs {dev} -R 'stat {file}' 2> /dev/null | sed -n '11p' ")
     #(0-11):1592-1603, (IND):1173, (12-15):1604-1607, (16-26):1424-1434
     blocks_info = stdout.decode().strip().split(',')
+    print(f'blocks_info : {blocks_info}')
     blocks = []
     ind_block_id = None
     for block_info in blocks_info:
@@ -60,6 +61,7 @@ def patch_block(dev:str,file:str,key_dict):
         if _tmp[0].strip() == '(IND)':
             ind_block_id =  int(_tmp[1])
         else:
+            print(f'block_info : {block_info}')
             id_range = _tmp[0].strip().replace('(','').replace(')','').split('-')
             block_range = _tmp[1].strip().replace('(','').replace(')','').split('-')
             blocks += [id for id in range(int(block_range[0]),int(block_range[1])+1)]
@@ -84,8 +86,21 @@ def patch_initrd_xz(initrd_xz:bytes,key_dict:dict,ljust=True):
         if old_public_key in new_initrd:
             print(f'initrd public key patched {old_public_key[:16].hex().upper()}...')
             new_initrd = new_initrd.replace(old_public_key,new_public_key)
-    new_initrd_xz = lzma.compress(new_initrd,check=lzma.CHECK_CRC32,filters=[{"id": lzma.FILTER_LZMA2, "preset": 9,}] )
+    preset = 6
+    new_initrd_xz = lzma.compress(new_initrd,check=lzma.CHECK_CRC32,filters=[{"id": lzma.FILTER_LZMA2, "preset": preset }] )
+    while len(new_initrd_xz) > len(initrd_xz) and preset < 9:
+        print(f'preset:{preset}')
+        print(f'new initrd xz size:{len(new_initrd_xz)}')
+        print(f'old initrd xz size:{len(initrd_xz)}')
+        preset += 1
+        new_initrd_xz = lzma.compress(new_initrd,check=lzma.CHECK_CRC32,filters=[{"id": lzma.FILTER_LZMA2, "preset": preset }] )
+    if len(new_initrd_xz) > len(initrd_xz):
+        new_initrd_xz = lzma.compress(new_initrd,check=lzma.CHECK_CRC32,filters=[{"id": lzma.FILTER_LZMA2, "preset": 9 | lzma.PRESET_EXTREME,'dict_size': 32*1024*1024,"lc": 4,"lp": 0, "pb": 0,}] )
     if ljust:
+        print(f'preset:{preset}')
+        print(f'new initrd xz size:{len(new_initrd_xz)}')
+        print(f'old initrd xz size:{len(initrd_xz)}')
+        print(f'ljust size:{len(initrd_xz)-len(new_initrd_xz)}')
         assert len(new_initrd_xz) <= len(initrd_xz),'new initrd xz size is too big'
         new_initrd_xz = new_initrd_xz.ljust(len(initrd_xz),b'\0')
     return new_initrd_xz
@@ -102,11 +117,13 @@ def find_7zXZ_data(data:bytes):
     while b'\x00\x00\x00\x00\x01\x59\x5A' in _data:
         offset2 = offset2 + _data.index(b'\x00\x00\x00\x00\x01\x59\x5A') + 7
         _data = _data[offset2:]
+    print(f'found 7zXZ data offset:{offset1} size:{offset2-offset1}')
     return data[offset1:offset2] 
 
 def patch_elf(data: bytes,key_dict:dict):
     initrd_xz = find_7zXZ_data(data)
-    return patch_initrd_xz(initrd_xz,key_dict)
+    new_initrd_xz =  patch_initrd_xz(initrd_xz,key_dict)
+    return data.replace(initrd_xz,new_initrd_xz)
 
 def patch_pe(data: bytes,key_dict:dict):
     vmlinux_xz = find_7zXZ_data(data)
@@ -118,6 +135,9 @@ def patch_pe(data: bytes,key_dict:dict):
     new_vmlinux = vmlinux.replace(initrd_xz,new_initrd_xz)
     new_vmlinux_xz = lzma.compress(new_vmlinux,check=lzma.CHECK_CRC32,filters=[{"id": lzma.FILTER_LZMA2, "preset": 9,}] )
     assert len(new_vmlinux_xz) <= len(vmlinux_xz),'new vmlinux xz size is too big'
+    print(f'new vmlinux xz size:{len(new_vmlinux_xz)}')
+    print(f'old vmlinux xz size:{len(vmlinux_xz)}')
+    print(f'ljust size:{len(vmlinux_xz)-len(new_vmlinux_xz)}')
     new_vmlinux_xz = new_vmlinux_xz.ljust(len(vmlinux_xz),b'\0')
     new_data = data.replace(vmlinux_xz,new_vmlinux_xz)
     return new_data
@@ -149,19 +169,20 @@ def patch_netinstall(key_dict: dict,input_file,output_file=None):
                             rva = sub_resource.directory.entries[0].data.struct.OffsetToData
                             size = sub_resource.directory.entries[0].data.struct.Size
                             data = pe.get_data(rva,size)
-                            assert len(data) -4 >= struct.unpack_from('<I',data)[0] ,f'bootloader data size mismathch'
-                            data = data[4:]
+                            _size = struct.unpack('<I',data[:4])[0]
+                            _data = data[4:4+_size]
                             try:
-                                if data[:2] == b'MZ':
-                                    new_data = patch_pe(data,key_dict)
-                                elif data[:4] == b'\x7FELF':
-                                    new_data = patch_elf(data,key_dict)
+                                if _data[:2] == b'MZ':
+                                    new_data = patch_pe(_data,key_dict)
+                                elif _data[:4] == b'\x7FELF':
+                                    new_data = patch_elf(_data,key_dict)
                                 else:
-                                    raise Exception(f'unknown bootloader format {data[:4].hex().upper()}')
+                                    raise Exception(f'unknown bootloader format {_data[:4].hex().upper()}')
                             except Exception as e:
                                 print(f'patch {bootloader["arch"]}({sub_resource.id}) bootloader failed {e}')
-                                new_data = data
-                            new_data = struct.pack("<I",len(new_data)) + new_data.ljust(len(data),b'\0')
+                                new_data = _data
+                            new_data = struct.pack("<I",_size) + new_data.ljust(len(_data),b'\0')
+                            new_data = new_data.ljust(size,b'\0')
                             pe.set_bytes_at_rva(rva,new_data)
             pe.write(output_file or input_file)
     elif netinstall[:4] == b'\x7FELF':
@@ -241,16 +262,19 @@ def patch_squashfs(path,key_dict):
                         print(f'{file} public key patched {old_public_key[:16].hex().upper()}...')
                         data = data.replace(old_public_key,new_public_key)
                         open(file,'wb').write(data)
-                data = open(file,'rb').read()
                 url_dict = {
                     os.environ['MIKRO_LICENCE_URL'].encode():os.environ['CUSTOM_LICENCE_URL'].encode(),
-                    os.environ['MIKRO_UPGRADE_URL'].encode():os.environ['CUSTOM_UPGRADE_URL'].encode()
+                    os.environ['MIKRO_UPGRADE_URL'].encode():os.environ['CUSTOM_UPGRADE_URL'].encode(),
+                    os.environ['MIKRO_CLOUD_URL'].encode():os.environ['CUSTOM_CLOUD_URL'].encode(),
+                    os.environ['MIKRO_CLOUD_PUBLIC_KEY'].encode():os.environ['CUSTOM_CLOUD_PUBLIC_KEY'].encode(),
                 }
+                data = open(file,'rb').read()
                 for old_url,new_url in url_dict.items():
                     if old_url in data:
                         print(f'{file} url patched {old_url.decode()[:7]}...')
                         data = data.replace(old_url,new_url)
                         open(file,'wb').write(data)
+                        
                 if os.path.split(file)[1] == 'licupgr':
                     url_dict = {
                         os.environ['MIKRO_RENEW_URL'].encode():os.environ['CUSTOM_RENEW_URL'].encode(),
@@ -319,7 +343,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     key_dict = {
         bytes.fromhex(os.environ['MIKRO_LICENSE_PUBLIC_KEY']):bytes.fromhex(os.environ['CUSTOM_LICENSE_PUBLIC_KEY']),
-        bytes.fromhex(os.environ['MIKRO_NPK_SIGN_PUBLIC_LKEY']):bytes.fromhex(os.environ['CUSTOM_NPK_SIGN_PUBLIC_KEY'])
+        bytes.fromhex(os.environ['MIKRO_NPK_SIGN_PUBLIC_KEY']):bytes.fromhex(os.environ['CUSTOM_NPK_SIGN_PUBLIC_KEY'])
     }
     kcdsa_private_key = bytes.fromhex(os.environ['CUSTOM_LICENSE_PRIVATE_KEY'])
     eddsa_private_key = bytes.fromhex(os.environ['CUSTOM_NPK_SIGN_PRIVATE_KEY'])
